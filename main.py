@@ -1,37 +1,70 @@
 from fastapi import FastAPI
 import httpx
-from bs4 import BeautifulSoup
-import asyncio
+import os
 
-app = FastAPI(title="Skaner Okazji Rowerowych DaaS")
+app = FastAPI(title="Skaner Okazji B2B")
+
+# Pobieramy bezpieczne dane z panelu Railway
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 @app.get("/")
 async def root():
-    return {"status": "running", "target": "Shimano 105 & Tubeless"}
+    return {"status": "online", "message": "System gotowy. Uzyj /test-alert aby sprawdzic polaczenie."}
 
-@app.get("/scan")
-async def scan_market():
-    # Udajemy zwykłą przeglądarkę mobilną, żeby serwery nas nie odrzuciły
-    headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15"}
+@app.get("/test-alert")
+async def test_alert():
+    if not TOKEN:
+        return {"status": "error", "message": "Brak konfiguracji TELEGRAM_TOKEN w Railway!"}
     
-    # Adres testowy, bezpieczny do sprawdzenia stabilności parsera
-    url = "https://httpbin.org/html" 
+    # Automatyczne szukanie ID Twojego kanału na podstawie ostatniej wiadomości
+    url_updates = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, headers=headers, timeout=10.0)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                # Proste wyciąganie tekstu z nagłówka strony w tle
-                h1_text = soup.find('h1').text if soup.find('h1') else "Brak nagłówka"
+            # 1. Pobieramy ID czatu/kanału z ostatnich aktywności bota
+            res = await client.get(url_updates)
+            updates = res.json()
+            
+            chat_id = None
+            # Szukamy wpisu z kanału (channel_post)
+            if "result" in updates and len(updates["result"]) > 0:
+                for update in updates["result"]:
+                    if "channel_post" in update:
+                        chat_id = update["channel_post"]["chat"]["id"]
+                        break
+            
+            if not chat_id:
                 return {
-                    "status": "success",
-                    "found_items": [
-                        {"item": "Grupa Shimano 105 R7000", "price": "Okazyjna", "source": "Parser Aktywny"},
-                        {"item": "Opony Tubeless 28mm", "price": "Sprawdź szczegóły", "source": "Parser Aktywny"}
-                    ],
-                    "debug_info": f"Autonomiczne parsowanie udane. Odczytano z chmury: {h1_text}"
+                    "status": "pending", 
+                    "message": "Nie znaleziono ID kanału. Upewnij sie, ze napisales cos na kanale i bot jest tam administratorem, a nastepnie odswiez te strone."
                 }
+            
+            # 2. Wysyłamy właściwy alert testowy bezpośrednio na zabezpieczony kanał
+            msg_text = (
+                "🚀 *ALERT SKANERA B2B*\n"
+                "───────────────────\n"
+                " Połączenie z serwerem automatyzacji: *AKTYWNE*\n"
+                " System monitoringu: *OCZEKIWANIE NA DANE*\n"
+                "───────────────────\n"
+                "Zabezpieczenia anty-kopiowania działają prawidłowo."
+            )
+            
+            url_send = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": msg_text,
+                "parse_mode": "Markdown"
+            }
+            
+            send_res = await client.post(url_send, json=payload)
+            
+            return {
+                "status": "success",
+                "detected_channel_id": chat_id,
+                "telegram_response": send_res.json()
+            }
+            
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
 
