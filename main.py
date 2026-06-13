@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import httpx
 from bs4 import BeautifulSoup
+import urllib.parse
 import os
 
 app = FastAPI(title="Skaner Motoryzacyjny B2B Pro")
@@ -11,16 +12,15 @@ async def root():
 
 @app.get("/run-scan")
 async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
-    # Pobieramy zmienne wewnątrz funkcji, żeby zapobiec crashom przy starcie
     token = os.getenv("TELEGRAM_TOKEN")
     channel_id = os.getenv("TARGET_CHANNEL")
     
     if not token or not channel_id:
         return {"status": "configuration_error", "message": "Sprawdź zmienne TELEGRAM_TOKEN i TARGET_CHANNEL w Railway!"}
     
-    # Pancerny blok try-except łapiący ABSOLUTNIE każdy błąd aplikacji
     try:
-        encoded_item = httpx.utils.quote(item)
+        # Poprawne i bezpieczne kodowanie znaków dla polskich słów na OLX
+        encoded_item = urllib.parse.quote(item)
         url = f"https://www.olx.pl/motoryzacja/q-{encoded_item}/?search%5Bfilter_float_price%3Ato%5D={max_price}&search%5Border%5D=created_at%3Adesc"
         
         headers = {
@@ -37,7 +37,7 @@ async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
             links = [a["href"] for a in soup.find_all("a", href=True) if "oferta" in a["href"]]
             
             if not links:
-                return {"status": "no_links_found", "message": "Brak ofert spełniających kryteria."}
+                return {"status": "no_links_found", "message": "Brak ofert spełniających kryteria na pierwszej stronie."}
                 
             target_link = links[0]
             full_link = f"https://www.olx.pl{target_link}" if target_link.startswith("/") else target_link
@@ -51,7 +51,6 @@ async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
                 f"🔗 [KLIKNIJ ABY SPRAWDZIĆ OFERTĘ]({full_link})"
             )
             
-            # Konwersja ID kanału na int/string w zależności od formatu
             payload = {
                 "chat_id": str(channel_id).strip(),
                 "text": msg_text,
@@ -63,5 +62,4 @@ async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
             return {"status": "success", "link": full_link}
             
     except Exception as e:
-        # Ten zapis sprawi, że zamiast "Internal Server Error" zobaczysz czysty powód błędu w przeglądarce
         return {"status": "fatal_code_error", "error_details": str(e)}
