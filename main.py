@@ -4,14 +4,14 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import os
 
-app = FastAPI(title="Skaner Motoryzacyjny B2B Pro")
+app = FastAPI(title="Prywatny Radar Ofert")
 
 @app.get("/")
 async def root():
-    return {"status": "active", "engine": "Automotive Scanner Live"}
+    return {"status": "active", "engine": "Global OLX Scanner Live"}
 
 @app.get("/run-scan")
-async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
+async def run_scan(item: str = "garmin forerunner 970", max_price: int = 2500):
     token = os.getenv("TELEGRAM_TOKEN")
     channel_id = os.getenv("TARGET_CHANNEL")
     
@@ -19,9 +19,9 @@ async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
         return {"status": "configuration_error", "message": "Sprawdź zmienne TELEGRAM_TOKEN i TARGET_CHANNEL w Railway!"}
     
     try:
-        # Poprawne i bezpieczne kodowanie znaków dla polskich słów na OLX
         encoded_item = urllib.parse.quote(item)
-        url = f"https://www.olx.pl/motoryzacja/q-{encoded_item}/?search%5Bfilter_float_price%3Ato%5D={max_price}&search%5Border%5D=created_at%3Adesc"
+        # ZMIANA: Szukamy w 'oferty' (cały OLX), a nie w 'motoryzacja'
+        url = f"https://www.olx.pl/oferty/q-{encoded_item}/?search%5Bfilter_float_price%3Ato%5D={max_price}&search%5Border%5D=created_at%3Adesc"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -37,16 +37,16 @@ async def run_scan(item: str = "wtryskiwacze", max_price: int = 600):
             links = [a["href"] for a in soup.find_all("a", href=True) if "oferta" in a["href"]]
             
             if not links:
-                return {"status": "no_links_found", "message": "Brak ofert spełniających kryteria na pierwszej stronie."}
+                return {"status": "no_links_found", "message": "Brak ofert spełniających kryteria."}
                 
             target_link = links[0]
             full_link = f"https://www.olx.pl{target_link}" if target_link.startswith("/") else target_link
             
             msg_text = (
-                f"🎯 *NOWY WPIS W BAZIE DANYCH*\n"
+                f"⌚ *ZNAŁEZIONO PRYWATNY CEL*\n"
                 f"───────────────────\n"
-                f"🔍 *Słowo:* {item}\n"
-                f"💰 *Cena max:* {max_price} PLN\n"
+                f"🔍 *Szukano:* {item}\n"
+                f"💰 *Do kwoty:* {max_price} PLN\n"
                 f"───────────────────\n"
                 f"🔗 [KLIKNIJ ABY SPRAWDZIĆ OFERTĘ]({full_link})"
             )
